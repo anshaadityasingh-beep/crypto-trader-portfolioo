@@ -5,8 +5,6 @@ services:
     region: oregon
     plan: free
     healthCheckPath: /health
-    # We use a custom start command to ensure Prisma migrations run before the Node server starts
-    startCommand: "npx prisma migrate deploy && node dist/server.js"
     rootDir: backend
     envVars:
       - key: NODE_ENV
