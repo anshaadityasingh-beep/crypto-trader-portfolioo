@@ -50,7 +50,7 @@ export async function fetchInitialPrice(defaultPrice = 43000): Promise<number> {
     clearTimeout(timeout);
 
     if (res.ok) {
-      const data = await res.json();
+      const data: any = await res.json();
       if (data?.bitcoin?.usd) {
         console.log(`[PriceWalk] Seeded starting price from CoinGecko: $${data.bitcoin.usd}`);
         return data.bitcoin.usd;
