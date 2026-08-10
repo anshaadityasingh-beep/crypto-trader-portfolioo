@@ -15,8 +15,6 @@ services:
         sync: false # Set this manually in the Render dashboard (e.g. from Supabase)
       - key: JWT_SECRET
         sync: false # Set this manually in the Render dashboard
-      - key: REDIS_URL
-        sync: false # Optional, for horizontal scaling
       - key: MARKET_MAKER_TICK_MS
         value: 3000
       - key: MARKET_MAKER_MAX_ORDERS
