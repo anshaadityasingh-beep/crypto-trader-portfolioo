@@ -1,0 +1,111 @@
+PROJECT CONTEXT — READ FIRST, KEEP AVAILABLE FOR ALL SUBSEQUENT MODULES
+
+PROJECT NAME: Real-Time Crypto Trading Engine
+
+WHAT WE'RE BUILDING
+A simplified crypto exchange. Users place buy/sell orders (market or limit) for a
+mock crypto symbol (e.g. BTC-USD). A custom matching engine matches compatible
+orders using price-time priority. All order book changes, trade executions, and
+order status updates are pushed live to every connected client via WebSockets.
+Prices are NOT fetched from any live market feed during operation — they are
+discovered entirely by the matching engine from user (and bot) order flow. A
+one-time price is fetched from CoinGecko's free public API only to seed a
+realistic starting price on first launch.
+
+TECH STACK (do not deviate without asking)
+- Language: TypeScript throughout (backend and frontend)
+- Backend runtime: Node.js
+- HTTP/REST: Express
+- WebSocket: raw `ws` library (NOT Socket.IO)
+- Database: PostgreSQL, accessed via Prisma ORM
+- Cache/Pub-Sub: Redis — but implemented behind a `Broadcaster` interface with an
+  in-memory default implementation for local dev; Redis is a swappable
+  implementation of the same interface, not a hard dependency
+- Frontend: React + Vite + TypeScript
+- Charting: lightweight-charts (TradingView's open-source library)
+- Auth: JWT (self-issued, no third-party auth provider)
+- Load testing: k6
+- Deployment target: Render (backend), Vercel (frontend), Supabase (Postgres),
+  Upstash (Redis, optional)
+
+MONOREPO FOLDER STRUCTURE (create this exact structure)
+/backend
+  /src
+    /engine        <- matching engine, pure logic, no I/O
+    /ws            <- WebSocket gateway
+    /api           <- Express REST routes
+    /db            <- Prisma schema + client
+    /bots          <- market-maker bot
+    /broadcaster   <- Broadcaster interface + in-memory + Redis implementations
+    /types         <- shared TypeScript types/interfaces used across modules
+    server.ts
+  package.json
+  tsconfig.json
+/frontend
+  /src
+    /components
+    /hooks
+    /lib
+  package.json
+/load-tests
+  (k6 scripts)
+/docs
+  README.md
+  ARCHITECTURE.md
+
+SHARED TYPES (put these in /backend/src/types/index.ts and reuse everywhere —
+every module below depends on these being consistent)
+
+  type OrderSide = 'buy' | 'sell';
+  type OrderType = 'market' | 'limit';
+  type OrderStatus = 'pending' | 'partially_filled' | 'filled' | 'cancelled';
+
+  interface Order {
+    id: string;
+    userId: string;
+    symbol: string;
+    side: OrderSide;
+    type: OrderType;
+    price: number | null; // null for market orders
+    quantity: number;
+    filledQuantity: number;
+    status: OrderStatus;
+    createdAt: number; // epoch ms, used for time priority
+  }
+
+  interface Trade {
+    id: string;
+    symbol: string;
+    price: number;
+    quantity: number;
+    buyOrderId: string;
+    sellOrderId: string;
+    executedAt: number;
+  }
+
+  interface OrderBookSnapshot {
+    symbol: string;
+    bids: { price: number; totalQuantity: number }[]; // sorted high to low
+    asks: { price: number; totalQuantity: number }[]; // sorted low to high
+  }
+
+GLOBAL CONVENTIONS FOR EVERY MODULE
+- Write unit tests alongside logic-heavy modules (matching engine especially).
+- No `any` types unless truly unavoidable — this is a CV project, type safety matters.
+- Every module prompt below is self-contained. If something references a type
+  or interface not restated in that prompt, assume it's from this shared
+  types file and use it as defined here.
+- Comment WHY, not WHAT, in non-obvious concurrency-related code — this is the
+  part that will be discussed in interviews.
+- Do not implement authentication with a third-party provider (no Auth0/Firebase)
+  — JWT issued and verified by our own Express server only.
+
+ORDER OF IMPLEMENTATION (feed the numbered prompt files to Antigravity in this order)
+01_matching_engine.txt
+02_database_schema.txt
+03_rest_api_auth.txt
+04_websocket_gateway.txt
+05_market_maker_bot.txt
+06_frontend_dashboard.txt
+07_load_testing.txt
+08_deployment.txt

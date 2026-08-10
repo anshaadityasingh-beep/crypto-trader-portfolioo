@@ -1,0 +1,96 @@
+MODULE 6 OF 8: FRONTEND DASHBOARD
+
+CONTEXT
+Part of the real-time crypto trading engine project (see project context file
+for shared types and tech stack). This is the React client that connects to
+the backend built in Modules 1-5. Location: /frontend/
+
+ASSUMPTIONS (backend already provides these — build against this contract)
+- REST endpoints: POST /api/auth/signup, POST /api/auth/login, GET /api/wallet,
+  POST /api/orders, DELETE /api/orders/:id, GET /api/orders,
+  GET /api/orderbook/:symbol, GET /api/trades/:symbol
+- WebSocket endpoint that accepts { type: 'subscribe', symbol } and returns
+  messages of type snapshot, book_update, trade, and order_update (see
+  Module 4 for exact shapes)
+- Shared types (Order, Trade, OrderBookSnapshot) — mirror these as TypeScript
+  types in /frontend/src/lib/types.ts so frontend and backend agree on shape
+
+GOAL
+Build a clean, functional trading dashboard: login/signup, live order book,
+live trade feed, live candlestick chart, an order entry form, and the user's
+open orders with live status updates.
+
+REQUIREMENTS
+
+1. Auth
+   - Simple login/signup forms, store JWT in memory (React state/context) —
+     do NOT use localStorage for the JWT if you want to avoid XSS concerns
+     for a portfolio project (acceptable to note this as a known simplification
+     if using localStorage for demo convenience, but say so in the README)
+   - Auth context/provider wrapping the app, redirect to login if unauthenticated
+
+2. WebSocket connection hook
+   - /frontend/src/hooks/useMarketSocket.ts — a hook that opens one shared
+     WebSocket connection, handles subscribe/unsubscribe per symbol, parses
+     incoming messages by type, and exposes live state (order book, recent
+     trades) to any component that uses it
+   - Handle reconnection: if the socket closes unexpectedly, retry with
+     exponential backoff (e.g. 1s, 2s, 4s, capped at 10s), and re-subscribe
+     to whatever symbol was active when it reconnects
+
+3. Order book component
+   - Two-column ladder: asks (red/coral) on top sorted ascending toward the
+     spread, bids (green/teal) below sorted descending from the spread
+   - Show price and aggregated quantity at each level
+   - Highlight the spread (best bid vs best ask) clearly
+   - Updates live as book_update messages arrive — do not require a page
+     refresh
+
+4. Trade feed component
+   - Scrolling list of recent trades (price, quantity, timestamp), newest
+     at top, capped to a reasonable number of visible rows (e.g. 30) with
+     older ones dropped from the DOM to avoid unbounded growth
+   - New trades should visually flash briefly on arrival (e.g. by side —
+     green if buy-initiated, red if sell-initiated) so live activity is
+     obvious to a viewer
+
+5. Price chart
+   - Use lightweight-charts to render a candlestick chart
+   - On initial load, fetch recent trade history via GET /api/trades/:symbol
+     and bucket it into candles (e.g. 1-minute candles) to seed the chart
+   - On new trade messages, update the current forming candle live, and
+     start a new candle when the time bucket rolls over
+
+6. Order entry form
+   - Fields: side (buy/sell), type (market/limit), quantity, price (disabled
+     for market orders)
+   - Client-side validation before submit (quantity > 0, price required for
+     limit orders)
+   - On submit, POST to /api/orders, show a toast/inline message for
+     success/failure (e.g. insufficient balance)
+
+7. Open orders panel
+   - List the user's own open orders with live status (pending, partially
+     filled, filled, cancelled), updating in place as order_update messages
+     arrive for this user — no refresh needed
+   - Cancel button per order that calls DELETE /api/orders/:id
+
+8. Layout
+   - Single dashboard page: order book + chart + trade feed as the main
+     three-column/stacked layout, order entry form and open orders in a
+     side panel. Keep it clean and readable — this is a portfolio piece,
+     so visual polish matters, but don't over-invest in styling beyond
+     "looks professional and readable."
+
+DELIVERABLE
+- /frontend/src/hooks/useMarketSocket.ts
+- /frontend/src/hooks/useAuth.ts
+- /frontend/src/components/OrderBook.tsx
+- /frontend/src/components/TradeFeed.tsx
+- /frontend/src/components/PriceChart.tsx
+- /frontend/src/components/OrderEntryForm.tsx
+- /frontend/src/components/OpenOrders.tsx
+- /frontend/src/components/LoginSignup.tsx
+- /frontend/src/App.tsx wiring it all together
+- /frontend/src/lib/types.ts (mirrored shared types)
+- /frontend/src/lib/api.ts (small fetch wrapper for REST calls with auth header)

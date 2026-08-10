@@ -1,0 +1,79 @@
+MODULE 3 OF 8: REST API + AUTH
+
+CONTEXT
+Part of the real-time crypto trading engine project (see project context file
+for shared types, folder structure, and tech stack). This module wires the
+matching engine (Module 1) and database (Module 2) together behind an Express
+REST API. Location: /backend/src/api/
+
+ASSUMPTIONS (already built in earlier modules — import, don't reimplement)
+- Matching engine with `submitOrder`, `cancelOrder`, `getSnapshot` from
+  /backend/src/engine/matchingEngine.ts
+- Prisma client singleton from /backend/src/db/client.ts
+- Shared types (Order, Trade, OrderBookSnapshot, etc.) from /backend/src/types
+
+GOAL
+Build the REST layer: authentication, wallet balance checks, order placement/
+cancellation (which calls into the matching engine), and history endpoints.
+
+REQUIREMENTS
+
+1. Auth endpoints
+   - POST /api/auth/signup — email + password, hash password with bcrypt,
+     create User + Wallet (seeded with mock balance, e.g. $10,000), return JWT
+   - POST /api/auth/login — verify credentials, return JWT
+   - JWT should contain userId, expire in 24h, signed with a secret read from
+     an environment variable (never hardcode the secret)
+   - Middleware: /backend/src/api/middleware/auth.ts — verifies JWT on
+     protected routes, attaches userId to the request object
+
+2. Wallet endpoint
+   - GET /api/wallet — returns the authenticated user's current balance
+
+3. Order endpoints (all protected by auth middleware)
+   - POST /api/orders — place a new order
+     - Validate: quantity > 0, price required and > 0 for limit orders,
+       user has sufficient balance for a buy order (quantity * price, or for
+       market buy orders, use a reasonable estimate/cap — explain your
+       approach in a comment since market order cost isn't known upfront)
+     - Persist the order to Postgres FIRST (status: pending), THEN call
+       matchingEngine.submitOrder() synchronously, THEN persist resulting
+       trades and updated order statuses back to Postgres
+     - Return the order plus any immediate trades from the match
+     - IMPORTANT: after this endpoint completes, it must trigger a broadcast
+       (Module 4 will provide a `broadcastUpdate(symbol)` style function —
+       for now, define a placeholder function/interface here that Module 4
+       will implement, e.g. an EventEmitter you emit on, so the two modules
+       connect without this module needing to know WebSocket internals)
+   - DELETE /api/orders/:id — cancel an order (only if it belongs to the
+     authenticated user), call matchingEngine.cancelOrder(), update Postgres,
+     emit the same broadcast event
+   - GET /api/orders — list the authenticated user's orders (open + historical)
+   - GET /api/orders/:id — get a single order's current status
+
+4. Market data endpoints (public, no auth required)
+   - GET /api/orderbook/:symbol — current order book snapshot
+   - GET /api/trades/:symbol — recent trade history (paginated, e.g. last 50)
+
+5. Startup reconciliation
+   - On server start, before accepting requests, load all orders with status
+     'pending' or 'partially_filled' from Postgres and re-insert them into
+     the matching engine's in-memory book, so open orders survive restarts.
+     Put this in /backend/src/server.ts as a startup step.
+
+6. Error handling
+   - Centralized Express error-handling middleware, consistent JSON error
+     shape: { error: string, code?: string }
+   - Proper HTTP status codes (400 for validation, 401 for auth, 404 for not
+     found, 409 for conflicts like insufficient balance)
+
+DELIVERABLE
+- /backend/src/api/routes/auth.ts
+- /backend/src/api/routes/wallet.ts
+- /backend/src/api/routes/orders.ts
+- /backend/src/api/routes/marketData.ts
+- /backend/src/api/middleware/auth.ts
+- /backend/src/api/middleware/errorHandler.ts
+- /backend/src/server.ts (Express app setup + startup reconciliation)
+- Do not implement the actual WebSocket broadcast logic here — only emit
+  events/call a placeholder interface that Module 4 will hook into.

@@ -1,0 +1,89 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// To apply the initial migration, run:
+// npx prisma migrate dev --name init
+
+// RECONCILIATION NOTE:
+// On server startup, the matching engine's in-memory book is empty.
+// Any resting (pending/partially_filled) orders should be reloaded from
+// Postgres into the engine so open orders survive a server restart.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  wallet       Wallet?
+  orders       Order[]
+}
+
+model Wallet {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  balance   Decimal  @default(0) @db.Decimal(20, 8)
+  currency  String   @default("USD")
+  updatedAt DateTime @updatedAt
+}
+
+model Order {
+  id             String      @id @default(uuid())
+  userId         String
+  user           User        @relation(fields: [userId], references: [id])
+  symbol         String
+  side           OrderSide
+  type           OrderType
+  price          Decimal?    @db.Decimal(20, 8)
+  quantity       Decimal     @db.Decimal(20, 8)
+  filledQuantity Decimal     @default(0) @db.Decimal(20, 8)
+  status         OrderStatus
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  buyTrades  Trade[] @relation("BuyTrades")
+  sellTrades Trade[] @relation("SellTrades")
+
+  @@index([userId, status])
+  @@index([symbol, status])
+}
+
+model Trade {
+  id          String   @id @default(uuid())
+  symbol      String
+  price       Decimal  @db.Decimal(20, 8)
+  quantity    Decimal  @db.Decimal(20, 8)
+  buyOrderId  String
+  buyOrder    Order    @relation("BuyTrades", fields: [buyOrderId], references: [id])
+  sellOrderId String
+  sellOrder   Order    @relation("SellTrades", fields: [sellOrderId], references: [id])
+  executedAt  DateTime @default(now())
+
+  @@index([symbol, executedAt])
+}
+
+enum OrderSide {
+  buy
+  sell
+}
+
+enum OrderType {
+  market
+  limit
+}
+
+enum OrderStatus {
+  pending
+  partially_filled
+  filled
+  cancelled
+}

@@ -1,0 +1,74 @@
+MODULE 5 OF 8: SYNTHETIC MARKET-MAKER BOT
+
+CONTEXT
+Part of the real-time crypto trading engine project (see project context file
+for shared types and tech stack). Without this bot, the live demo will look
+empty since real users won't organically generate enough order flow to make
+the order book and chart look active. Location: /backend/src/bots/
+
+ASSUMPTIONS (already built — import, don't reimplement)
+- Matching engine's submitOrder from Module 1
+- REST API's order placement flow from Module 3 (the bot should place orders
+  through the same code path as real users — either by calling the internal
+  order-placement function directly, or by hitting the REST API itself like
+  a normal client; prefer calling the internal function directly to avoid
+  unnecessary HTTP overhead, but ensure it still triggers the same broadcast
+  events real orders trigger)
+
+GOAL
+Build a background process that continuously places randomized buy/sell
+orders to simulate market activity, keeping the price moving realistically
+around a seeded starting value, without ever making the market look obviously
+fake (e.g. avoid huge unrealistic price jumps).
+
+REQUIREMENTS
+
+1. Bot user
+   - Create one or more dedicated "bot" users in the database (via the seed
+     script from Module 2, or created on first bot startup if they don't
+     exist) with a very large mock balance so they never run out of funds
+     to trade with.
+
+2. Price walk logic
+   - On startup, fetch the current real BTC price once from CoinGecko's
+     public API (https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd)
+     with a fallback hardcoded value (e.g. $43,000) if the fetch fails or
+     times out — never let a failed external call block startup.
+   - Maintain an internal "reference price" that does a random walk: each
+     tick, nudge it up or down by a small random percentage (e.g. +/- 0.1%),
+     so price movement looks organic rather than jumping randomly.
+
+3. Order generation (runs on an interval, e.g. every 1-3 seconds, randomized)
+   - Each tick, generate 1-3 random orders:
+     - Randomly choose buy or sell
+     - Randomly choose limit or market (bias toward limit, e.g. 80/20)
+     - For limit orders, price = reference price +/- a small random spread
+       (e.g. within 0.5%), so orders cluster near the current price and
+       actually have a chance of matching
+     - Randomize quantity within a reasonable small range (e.g. 0.001 to 0.5
+       BTC-equivalent)
+   - Submit these orders through the same path real user orders take.
+
+4. Safety limits
+   - Cap the bot's total open order count (e.g. max 50 resting orders at once)
+     to avoid unbounded memory growth — cancel the oldest bot orders if the
+     cap is exceeded.
+   - Make tick interval and order-count limits configurable via environment
+     variables so you can slow it down or speed it up for demos.
+
+5. Start/stop control
+   - Export a `startMarketMaker(symbol: string)` and `stopMarketMaker()`
+     function so it can be started from server.ts on boot, and so it could
+     be manually paused later if needed (e.g. for a live demo where you want
+     to show a real trade cleanly without bot noise).
+
+6. Logging
+   - Log a concise line per tick (e.g. "[bot] placed BUY 0.12 @ 43012.50")
+     at debug level only, so it doesn't spam production logs by default.
+
+DELIVERABLE
+- /backend/src/bots/marketMaker.ts
+- /backend/src/bots/priceWalk.ts (the random-walk reference price logic,
+  kept separate so it's independently testable)
+- Wire startMarketMaker() into /backend/src/server.ts startup, after the
+  reconciliation step from Module 3

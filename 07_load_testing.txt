@@ -1,0 +1,67 @@
+MODULE 7 OF 8: LOAD TESTING
+
+CONTEXT
+Part of the real-time crypto trading engine project (see project context file
+for shared types and tech stack). This module produces the concrete
+performance numbers you'll cite on your resume ("handled X orders/sec at
+Y ms broadcast latency") — so it needs to actually run and produce real
+output, not just exist as boilerplate. Location: /load-tests/
+
+ASSUMPTIONS
+- Backend from Modules 1-5 is running locally (REST API + WebSocket gateway)
+- k6 is installed locally (https://k6.io) — provide install instructions for
+  the OS-agnostic case (brew, or downloading the binary) in a README
+
+GOAL
+Write k6 scripts that simulate realistic concurrent load against the REST
+order-placement endpoint and measure throughput/latency, plus a way to verify
+WebSocket broadcast fan-out doesn't degrade under load.
+
+REQUIREMENTS
+
+1. REST order placement load test
+   - /load-tests/order-placement.js
+   - Simulate N virtual users (start with 50, make it configurable via k6
+     environment variables) each repeatedly:
+     - Logging in once (or using pre-seeded test accounts) to get a JWT
+     - Placing randomized buy/sell limit orders at prices near a fixed
+       reference price, at a controlled rate (e.g. ramping from 10 to 200
+       requests/sec over the test duration)
+   - Assert response status is 200/201 and response time thresholds (e.g.
+     p95 < 200ms) using k6 thresholds config
+   - Output: requests/sec sustained, p50/p95/p99 latency, error rate
+
+2. WebSocket fan-out test
+   - /load-tests/websocket-fanout.js
+   - Simulate M virtual clients (e.g. 100) all connecting and subscribing to
+     the same symbol, while a separate small set of "trader" VUs place
+     orders via REST to generate trade events
+   - Measure and log the time between a trade being triggered and it being
+     received by subscribed clients (you'll need to timestamp on send and
+     compare against received timestamp — document how you correlate these
+     in a comment, e.g. by embedding a trace id in the triggering order that
+     gets echoed in the resulting trade broadcast)
+   - Report: average and p95 broadcast latency across all subscribed clients
+
+3. Results documentation
+   - /load-tests/RESULTS.md — a template file with placeholders for you to
+     fill in actual numbers after running the tests locally, e.g.:
+     "Sustained X orders/sec at p95 latency of Y ms with Z%% error rate
+     across N concurrent users. WebSocket broadcast p95 latency: W ms across
+     M subscribed clients."
+   - Explicitly instruct: run these against your own local machine or a
+     staging deploy, NOT against the live production Render instance, since
+     load testing a free-tier host could exhaust its resources or violate
+     terms of service.
+
+4. Script to run everything
+   - /load-tests/run-all.sh — a simple shell script that runs both k6 scripts
+     in sequence and saves output to timestamped log files in
+     /load-tests/results/
+
+DELIVERABLE
+- /load-tests/order-placement.js
+- /load-tests/websocket-fanout.js
+- /load-tests/RESULTS.md (template)
+- /load-tests/run-all.sh
+- /load-tests/README.md explaining how to install k6 and run the scripts

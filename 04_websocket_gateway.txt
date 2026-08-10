@@ -1,0 +1,89 @@
+MODULE 4 OF 8: WEBSOCKET GATEWAY + BROADCASTER
+
+CONTEXT
+Part of the real-time crypto trading engine project (see project context file
+for shared types and tech stack). This module is the real-time nervous system
+of the app — it pushes order book updates, trade executions, and per-user
+order status changes to connected clients. Location: /backend/src/ws/ and
+/backend/src/broadcaster/
+
+ASSUMPTIONS (already built — import, don't reimplement)
+- REST API (Module 3) emits events (e.g. via a shared EventEmitter, or
+  whatever placeholder interface Module 3 defined) whenever an order is
+  placed, matched, or cancelled
+- Matching engine's getSnapshot() from Module 1
+- Shared types from /backend/src/types
+
+GOAL
+Build a WebSocket server using the raw `ws` library that:
+1. Lets clients subscribe to a symbol's live updates
+2. Broadcasts order book snapshots and trade executions to all subscribers
+   of that symbol
+3. Sends order-status updates privately to the specific user who owns that
+   order
+4. Handles reconnection gracefully (a client that reconnects should get a
+   fresh snapshot immediately, not just deltas, so it can't miss state)
+
+REQUIREMENTS
+
+1. Broadcaster interface (design this so Redis can be swapped in later
+   without changing calling code)
+   - /backend/src/broadcaster/broadcaster.ts — interface with:
+     `publish(channel: string, message: object): void`
+     `subscribe(channel: string, handler: (message: object) => void): void`
+   - /backend/src/broadcaster/inMemoryBroadcaster.ts — simple implementation
+     using Node's EventEmitter, works fine for a single server instance
+   - /backend/src/broadcaster/redisBroadcaster.ts — implementation using
+     Redis pub/sub (ioredis or node-redis), used when a REDIS_URL env var is
+     present; document that this is what enables horizontal scaling across
+     multiple server instances (each instance subscribes to Redis channels
+     and relays to its own connected WebSocket clients)
+   - Pick implementation at startup based on whether REDIS_URL is set —
+     don't require Redis for local dev.
+
+2. WebSocket server setup
+   - /backend/src/ws/wsServer.ts — attach to the same HTTP server as Express
+     (don't run a separate port)
+   - On connection, expect a subscribe message like:
+     { type: 'subscribe', symbol: 'BTC-USD' }
+   - On subscribe, immediately send a full order book snapshot for that
+     symbol as a { type: 'snapshot', data: OrderBookSnapshot } message, THEN
+     add the client to that symbol's broadcast group for future updates
+   - Support unsubscribe similarly
+
+3. Message types to broadcast (define as a discriminated union in
+   /backend/src/types, extend the shared types file)
+   - { type: 'snapshot', symbol, data: OrderBookSnapshot }
+   - { type: 'book_update', symbol, data: OrderBookSnapshot } — sent after
+     any match or new resting order changes the book
+   - { type: 'trade', symbol, data: Trade } — sent the instant a trade executes
+   - { type: 'order_update', userId, data: Order } — sent ONLY to the specific
+     connected client(s) authenticated as that userId, not broadcast publicly
+
+4. Per-user targeting
+   - When a client connects, it should authenticate (pass its JWT, e.g. as a
+     query param or first message) so the server knows which userId owns
+     that socket. Maintain a map of userId -> Set of WebSocket connections
+     (a user could have multiple tabs open).
+   - When Module 3's order events fire for a given userId, look up that
+     user's active connections and send order_update directly to them.
+
+5. Reconnection handling
+   - If a client disconnects and reconnects, it re-subscribes and gets a
+     fresh snapshot (already covered by requirement 2) — explicitly do NOT
+     try to replay missed deltas; a fresh snapshot is simpler and always
+     correct. Note this trade-off in a code comment (simpler + correct vs.
+     more complex delta-replay).
+
+6. Cleanup
+   - On client disconnect, remove it from all subscription groups and from
+     the userId connection map to avoid memory leaks.
+
+DELIVERABLE
+- /backend/src/ws/wsServer.ts
+- /backend/src/broadcaster/broadcaster.ts
+- /backend/src/broadcaster/inMemoryBroadcaster.ts
+- /backend/src/broadcaster/redisBroadcaster.ts
+- Extend /backend/src/types/index.ts with the WebSocket message union type
+- Wire this into /backend/src/server.ts (from Module 3) so the HTTP server
+  and WebSocket server share the same port

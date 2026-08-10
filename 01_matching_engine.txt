@@ -1,0 +1,86 @@
+MODULE 1 OF 8: MATCHING ENGINE CORE
+
+CONTEXT
+This is part of a real-time crypto trading engine project (see project context
+file for full tech stack and shared types). This module is PURE LOGIC — no
+Express, no WebSockets, no database calls. It must be fully testable in
+isolation. Location: /backend/src/engine/
+
+GOAL
+Implement a price-time priority order matching engine for a single trading
+symbol at a time (the engine should be instantiable per-symbol so multiple
+symbols can each get their own instance later).
+
+REQUIREMENTS
+
+1. Order book data structure
+   - Maintain two sorted collections: bids (buy orders, sorted by price
+     descending, then by createdAt ascending within the same price) and asks
+     (sell orders, sorted by price ascending, then by createdAt ascending).
+   - Use whatever data structure gives you O(log n) insertion and O(1) access
+     to the best bid/ask (a sorted array with binary insertion is acceptable
+     for this project's scale; do not over-engineer with a custom skip list
+     unless you want to — either is fine, but justify the choice in a comment).
+
+2. Order submission
+   - `submitOrder(order: Order): Trade[]` — accepts a new order, attempts to
+     match it immediately against the opposite side of the book.
+   - LIMIT orders: match against the opposite book while
+     the opposing best price satisfies the limit price constraint (buy limit
+     matches asks priced <= limit price; sell limit matches bids priced >=
+     limit price). Any unfilled remainder rests in the book.
+   - MARKET orders: match immediately against the best available opposing
+     price(s) regardless of price, consuming book levels until fully filled or
+     the book is empty. Market orders never rest in the book — if unfilled
+     remainder exists because the book is empty, mark status appropriately
+     (do not silently drop it — return it as unfilled so the caller can decide,
+     e.g. cancel it).
+   - Support PARTIAL FILLS: an incoming order can match against multiple
+     resting orders across one or more price levels in a single call,
+     producing multiple Trade objects.
+   - Every match must update both orders' `filledQuantity` and `status`
+     correctly (pending -> partially_filled -> filled).
+
+3. Order cancellation
+   - `cancelOrder(orderId: string): boolean` — removes a resting order from
+     the book if it hasn't fully filled yet. Return false if the order isn't
+     found or is already filled.
+
+4. Order book snapshot
+   - `getSnapshot(): OrderBookSnapshot` — returns aggregated price levels
+     (sum of quantity at each price) for bids and asks, per the shared
+     OrderBookSnapshot type. This is what gets sent to clients later — do NOT
+     expose individual orders here, only aggregated levels, for two reasons:
+     performance and not leaking other users' order identities.
+
+5. Concurrency correctness (THIS IS THE CORE INTERVIEW TALKING POINT)
+   - Write a short comment block at the top of the matching engine file
+     explaining: Node.js is single-threaded per event loop, so within one
+     process, synchronous matching logic is inherently race-free as long as
+     you never `await` in the middle of a match operation. Explain that if
+     this were sharded across multiple processes/instances, each symbol would
+     need to be pinned to exactly one process (e.g. via consistent hashing)
+     to preserve this guarantee, OR you'd need a distributed lock per symbol.
+   - Make sure `submitOrder` and `cancelOrder` are fully synchronous (no
+     Promises, no async) — this is what makes the race-free guarantee true.
+     Any I/O (database writes, broadcasting) must happen in a calling layer
+     AFTER the synchronous match completes, never inside the engine.
+
+6. Unit tests (use Jest or Vitest, your choice, but be consistent)
+   - Limit order matches immediately against a resting opposite order
+   - Limit order partially fills against multiple resting orders at different
+     price levels, remainder rests in book
+   - Market order consumes multiple price levels until filled
+   - Market order with insufficient liquidity returns partial fill + signals
+     unfilled remainder
+   - Cancellation removes an order and it can no longer be matched
+   - Price-time priority: two resting orders at the same price, earlier
+     order fills first
+   - getSnapshot() correctly aggregates quantity at each price level
+
+DELIVERABLE
+- /backend/src/engine/orderBook.ts
+- /backend/src/engine/matchingEngine.ts
+- /backend/src/engine/matchingEngine.test.ts (or .spec.ts)
+- Do not implement anything outside /backend/src/engine/ in this module —
+  no server, no routes, no database. Those come in later modules.

@@ -1,0 +1,86 @@
+MODULE 8 OF 8: DEPLOYMENT
+
+CONTEXT
+Part of the real-time crypto trading engine project (see project context file
+for shared types and tech stack). This is the final module — getting the
+project live on the internet so it's linkable from a resume/CV. Location:
+project root, plus platform-specific config files.
+
+ASSUMPTIONS
+- Backend (Modules 1-5) and frontend (Module 6) are both functioning locally
+- Target platforms: Render (backend, WebSocket-capable web service),
+  Vercel (frontend static hosting), Supabase (managed Postgres, chosen over
+  Render's free Postgres because Supabase's free tier doesn't expire after
+  90 days), Upstash (managed Redis, optional — only needed if demonstrating
+  the Redis broadcaster implementation from Module 4)
+
+GOAL
+Containerize and configure the app for a working, persistent live deployment
+that a recruiter can actually click and use.
+
+REQUIREMENTS
+
+1. Backend Dockerfile
+   - /backend/Dockerfile — multi-stage build (build TypeScript, then a slim
+     runtime image), expose the correct port, run Prisma migrations on
+     startup before starting the server (document this clearly — e.g. an
+     entrypoint script that runs `npx prisma migrate deploy` then starts
+     the server)
+
+2. Environment variables documentation
+   - /backend/.env.example — list every required env var with a short
+     comment each: DATABASE_URL, JWT_SECRET, REDIS_URL (optional),
+     PORT, NODE_ENV, MARKET_MAKER_TICK_MS, MARKET_MAKER_MAX_ORDERS
+   - /frontend/.env.example — VITE_API_URL, VITE_WS_URL
+   - Never commit actual secrets — only .env.example files with placeholders
+
+3. Render configuration
+   - /render.yaml — define the backend as a web service, specify build/start
+     commands, environment variable references (marked as secrets, not
+     hardcoded), health check path (add a simple GET /health endpoint to the
+     Express app if it doesn't already exist from Module 3, returning
+     { status: 'ok' })
+
+4. Vercel configuration
+   - /frontend/vercel.json if needed for SPA routing (rewrite all routes to
+     index.html so client-side routing works on refresh)
+   - Document setting VITE_API_URL and VITE_WS_URL as Vercel environment
+     variables pointing at the deployed Render backend URL
+
+5. CORS
+   - Configure Express CORS middleware to explicitly allow the deployed
+     Vercel frontend origin (not a wildcard `*`, since this is a real
+     deployed app with auth — explain in a comment why wildcard CORS is
+     inappropriate here)
+
+6. WebSocket over TLS
+   - Document that the frontend must connect using `wss://` (not `ws://`)
+     against the deployed backend, since Render serves over HTTPS — add a
+     note on how the useMarketSocket hook (Module 6) should derive ws vs wss
+     from the current protocol rather than hardcoding it
+
+7. Free-tier cold start handling
+   - Render's free tier sleeps after inactivity. Add a small note in the
+     frontend (e.g. a loading state that says "waking up the server, this
+     can take up to 30 seconds on first load") so a recruiter clicking the
+     link doesn't think it's broken
+   - Optional: document a simple external cron/uptime-ping approach (e.g.
+     a free UptimeRobot check hitting /health every 10 minutes) to reduce
+     how often the backend sleeps — mention this as optional, not required
+
+8. README for the whole project
+   - /docs/README.md — project description, architecture diagram (can be a
+     simple text/ASCII diagram or reference to a drawn one), tech stack,
+     local setup instructions, live demo link placeholder, and a note on
+     known limitations (mock money only, simplified matching engine,
+     free-tier hosting cold starts)
+
+DELIVERABLE
+- /backend/Dockerfile
+- /backend/.env.example
+- /frontend/.env.example
+- /render.yaml
+- /frontend/vercel.json (if needed)
+- CORS config change in /backend/src/server.ts
+- GET /health endpoint in /backend/src/api (or server.ts)
+- /docs/README.md

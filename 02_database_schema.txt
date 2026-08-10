@@ -1,0 +1,87 @@
+MODULE 2 OF 8: DATABASE SCHEMA (PRISMA + POSTGRESQL)
+
+CONTEXT
+Part of the real-time crypto trading engine project (see project context file
+for shared types and tech stack). This module defines persistence only — no
+API routes, no business logic. Location: /backend/src/db/
+
+GOAL
+Define a Prisma schema that persists users, wallets, orders, and trades, and
+supports reconstructing state (order history, trade history) after a restart.
+Note: the LIVE order book itself lives in-memory in the matching engine
+(module 1) for speed — Postgres is for durable records (audit trail, history,
+account state), not for the hot path of matching.
+
+REQUIREMENTS
+
+1. Prisma schema (/backend/prisma/schema.prisma) with these models:
+
+   User
+   - id (uuid, primary key)
+   - email (unique)
+   - passwordHash
+   - createdAt
+
+   Wallet
+   - id (uuid, primary key)
+   - userId (foreign key to User, one-to-one)
+   - balance (Decimal — use Decimal, not Float, for money — floating point
+     errors are exactly the kind of bug that undermines a finance project)
+   - currency (string, default "USD")
+   - updatedAt
+
+   Order
+   - id (uuid, primary key)
+   - userId (foreign key to User)
+   - symbol (string, e.g. "BTC-USD")
+   - side (enum: buy, sell)
+   - type (enum: market, limit)
+   - price (Decimal, nullable — null for market orders)
+   - quantity (Decimal)
+   - filledQuantity (Decimal, default 0)
+   - status (enum: pending, partially_filled, filled, cancelled)
+   - createdAt
+   - updatedAt
+
+   Trade
+   - id (uuid, primary key)
+   - symbol (string)
+   - price (Decimal)
+   - quantity (Decimal)
+   - buyOrderId (foreign key to Order)
+   - sellOrderId (foreign key to Order)
+   - executedAt
+
+2. Indexes
+   - Index Order on (userId, status) for fast "my open orders" queries
+   - Index Order on (symbol, status) for reconstructing book state on restart
+   - Index Trade on (symbol, executedAt) for chart/history queries
+
+3. Prisma client singleton
+   - /backend/src/db/client.ts — export a single shared PrismaClient instance,
+     following Prisma's recommended pattern to avoid exhausting connections
+     in dev mode with hot-reloading.
+
+4. Seed script
+   - /backend/prisma/seed.ts — creates 2-3 test users, each with a wallet
+     pre-loaded with a mock balance (e.g. $10,000), so the app is testable
+     immediately after setup without manual signup.
+
+5. Migration
+   - Generate the initial Prisma migration. Provide the exact CLI commands
+     needed (`npx prisma migrate dev --name init`, etc.) in a comment at the
+     top of schema.prisma so it's obvious how to apply it.
+
+6. Reconciliation note
+   - Add a short comment in schema.prisma explaining the intended flow: on
+     server startup, the matching engine's in-memory book is empty; any
+     resting (pending/partially_filled) orders should be reloaded from
+     Postgres into the engine so open orders survive a server restart. The
+     actual reload logic will be implemented in Module 3 (REST API) or
+     Module 4 (WebSocket gateway) — just leave the schema ready to support it.
+
+DELIVERABLE
+- /backend/prisma/schema.prisma
+- /backend/prisma/seed.ts
+- /backend/src/db/client.ts
+- Do not implement API routes or business logic in this module.

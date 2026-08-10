@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: crypto-trader-backend
+    env: docker
+    region: oregon
+    plan: free
+    healthCheckPath: /health
+    # We use a custom start command to ensure Prisma migrations run before the Node server starts
+    startCommand: "npx prisma migrate deploy && node dist/server.js"
+    rootDir: backend
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: DATABASE_URL
+        sync: false # Set this manually in the Render dashboard (e.g. from Supabase)
+      - key: JWT_SECRET
+        sync: false # Set this manually in the Render dashboard
+      - key: REDIS_URL
+        sync: false # Optional, for horizontal scaling
+      - key: MARKET_MAKER_TICK_MS
+        value: 3000
+      - key: MARKET_MAKER_MAX_ORDERS
+        value: 50
