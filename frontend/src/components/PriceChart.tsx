@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { createChart } from 'lightweight-charts';
+import { createChart, CandlestickSeries } from 'lightweight-charts';
 import type { IChartApi, ISeriesApi, Time } from 'lightweight-charts';
 import type { Trade } from '../lib/types';
 
@@ -32,8 +32,7 @@ export function PriceChart({ trades }: PriceChartProps) {
       height: 300,
     });
 
-    // @ts-expect-error - Lightweight Charts typings may differ slightly depending on version
-    const series = chart.addCandlestickSeries({
+    const series = chart.addSeries(CandlestickSeries, {
       upColor: '#10b981',
       downColor: '#ef4444',
       borderVisible: false,
