@@ -13,6 +13,7 @@
 import http from 'http';
 import express from 'express';
 import cors from 'cors';
+import url from 'url';
 import { prisma } from './db/client.js';
 import { getEngine } from './engine/index.js';
 import { errorHandler } from './api/middleware/errorHandler.js';
@@ -114,7 +115,7 @@ async function startServer() {
 }
 
 // Run if this file is the entry point (not imported for testing)
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === url.pathToFileURL(process.argv[1]).href) {
   startServer().catch((err) => {
     console.error('Failed to start server:', err);
     process.exit(1);
